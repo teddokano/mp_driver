@@ -40,26 +40,38 @@ class NAFE13388( AFE_base, SPI_target ):
 
 		SPI_target.__init__( self, spi, cs )
 
+		"""
+		###	For original EVB
 		self.reset_pin	= Pin( "D6", Pin.OUT )
 		self.syn_pin	= Pin( "D5", Pin.OUT )
 		self.drdy_pin	= Pin( "D3", Pin.IN )
 		self.int_pin	= Pin( "D2", Pin.IN )
+		"""
 
+		###	For UIM
+		self.reset_pin	= Pin( "D7", Pin.OUT )
+		self.syn_pin	= Pin( "D6", Pin.OUT )
+		self.drdy_pin	= Pin( "D4", Pin.IN )
+		self.int_pin	= Pin( "D3", Pin.IN )
+
+		
 		self.reset_pin.value( 1 )
 		self.syn_pin.value( 1 )
 		
 		self.reset()
 		self.boot()
 		
+		self.pga_gain			= [ 0.2, 0.4, 0.8, 1, 2, 4, 8, 16 ]
+		self.coeff_microvolt	= [ 0 ] * 16
+		
 		self.logical_channel	= [
 									# self.logical_ch_config( 0, [ 0x1150, 0x00AC, 0x1400, 0x0000 ] ),
 									# self.logical_ch_config( 1, [ 0x3350, 0x00A4, 0x1400, 0x3060 ] ),
 									self.logical_ch_config( 0, [ 0x22F0, 0x70AC, 0x5800, 0x0000 ] ),
 									self.logical_ch_config( 1, [ 0x33F0, 0x70B1, 0x5800, 0x3860 ] ),
+									self.logical_ch_config( 0, [ 0x1070, 0x0084, 0x2900, 0x0000 ] ),
+									self.logical_ch_config( 1, [ 0x2070, 0x0084, 0x2900, 0x0000 ] ),
 									]
-
-		# self.coeff_microvolt	= ((10 / (2 ** 24)) / 0.8) * 1e6
-		self.coeff_microvolt	= ((10 / (2 ** 24)) / 16) * 1e6
 
 		print( f"================ self.num_logcal_ch = {self.num_logcal_ch}" )
 
@@ -81,7 +93,7 @@ class NAFE13388( AFE_base, SPI_target ):
 		ch_read		= self.cb_count % 2
 
 		# read data
-		self.ch[ ch_read ]	= self.read_r24( 0x2040 + ch_read )	* self.coeff_microvolt
+		self.ch[ ch_read ]	= self.read_r24( 0x2040 + ch_read )	* self.coeff_microvolt[ ch_read ]
 
 		# start ADC operation
 		self.write_r16( 0x0000 + ch_start )
@@ -187,7 +199,7 @@ class NAFE13388( AFE_base, SPI_target ):
 							0x002F: 0x0000,
 							0x0029: 0x0000,
 							},
-					   {	0x0030: 0x0010, 
+						{	0x0030: 0x0010, 
 							},
 					]
 					
@@ -246,7 +258,13 @@ class NAFE13388( AFE_base, SPI_target ):
 		print( f"bits = {bits}" )
 		print( f"self.read_r16( 0x24 ) = {self.read_r16( 0x24 )}" )
 		
+		cc0	= list[ 0 ]
 		
+		if cc0 & 0x0010:
+			self.coeff_microvolt[ logical_channel ]	= ((10.0 / (1 << 24)) / self.pga_gain[ (cc0 >> 5) & 0x7 ]) * 1e6
+		else:
+			self.coeff_microvolt[ logical_channel ]	= (4.0 / (1 << 24)) * 1e6;
+
 		
 		self.num_logcal_ch	= 0
 		for i in range( 16 ):
@@ -273,8 +291,9 @@ class NAFE13388( AFE_base, SPI_target ):
 		if ch is not None:
 			self.write_r16( 0x0000 + ch )
 			self.write_r16( 0x2000 )
-			sleep_ms( 100 )
-			return self.read_r24( 0x2040 + ch ) * self.coeff_microvolt
+#			sleep_ms( 100 )
+			sleep_ms( 50 )
+			return self.read_r24( 0x2040 + ch ) * self.coeff_microvolt[ ch ]
 		
 		values	= []
 
@@ -343,7 +362,9 @@ def main():
 	while True:
 		if afe.done:
 			afe.done	= False
-			print( f"{count},  {afe.ch[ 0 ]} μV,  {afe.ch[ 1 ]} μV" )
+#			print( f"{count},  {afe.ch[ 0 ]} μV,  {afe.ch[ 1 ]} μV" )
+			print( f"{afe.ch[ 0 ]:.3f},  {afe.ch[ 1 ]:.3f}" )
+#			print( f"{afe.ch[ 0 ]},  {afe.ch[ 1 ]}" )
 			count	+= 1
 
 if __name__ == "__main__":
